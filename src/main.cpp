@@ -1,37 +1,31 @@
 #include "main.h"
 #include "lemlib/chassis/chassis.hpp"
+#include "pros/abstract_motor.hpp"
 #include "pros/misc.h"
 #include "pros/motors.hpp"
 #include "lemlib/api.hpp"
 #include "pros/optical.hpp"
+#include "pros/rtos.h"
 #include "pros/rtos.hpp"
-
-
-
-/*
-1. Reattach odom sensors, upload code, run driver control, see if any sensors are flipped and all are connected to proper/working ports and if they are all working properly
-2. If they aren't try running the same code for blue right or your prior repos, which haven't been changed
-3. Measure offset of tracking wheel
-4. Test auton
-5. Tune pid
-6. Test lady brown odom, see if its printing proper brian values
-7. test lady brown
-8. check wheel sizes, rpm, etc.
-9. check if brain is working
-10. CHECK SENSORS!!!
-11. TRY NORMAL VERSION WITH JUST COLOR SORT, INTAKE AND STUFF IS IN NORMAL OP CONTROL, TASK WITH THE VOID THINGIE
-12. We would do current version with everything in task or only color sort(only if or if/else + if)
- */
-
 
 
 int positionState = 0;
 const int numStates = 3;
-int states[numStates] = {0, 28, 150};
+
+int statesAuton[numStates] = {-30, -2, 230};
+int statesDriver[numStates] = {0, 34, 180};
+
 int currState = 0;
 int target = 0;
 
+bool on = false;
+bool direction = true;
+bool auton = true;
+
+bool isDescore = true;
+
 pros::Controller master(pros::E_CONTROLLER_MASTER); 
+
 lemlib::ExpoDriveCurve driveCurve(3, 10, 1.019);
 
 pros::MotorGroup left_mg({-19, -18, -17}, pros::MotorGearset::blue);    
@@ -93,7 +87,6 @@ lemlib::ControllerSettings angular_controller(
     0 // maximum acceleration (slew)
 );
 
-// create the chassis
 lemlib::Chassis chassis(
     drivetrain, 
     lateral_controller,
@@ -105,27 +98,45 @@ lemlib::Chassis chassis(
 
 void nextState(){
     currState += 1;
-    if(currState == 3){
+
+    if(currState == 3 && auton == true){
         currState = 0;
     }
-    target = states[currState];
+
+    if (auton == true) {
+        target = statesAuton[currState];
+    } else {
+        target = statesDriver[currState];
+    }
 }
 
+
 void liftControl(){
-    double kp = 3;
+    double kp;
+    if(auton == true){
+        kp = 0.5;
+    }
+    else{
+        kp = 2.5;
+    }
     double err = target - (ladyOdom.get_position()/100.0);
     double velocity = kp * err;
     lb.move(velocity);
 }
 
-// void colorSort(){
-//     while(true){
-//         if(colorSensor.get_hue()>5 && colorSensor.get_hue()<15){
-//             chain.move(-400);
-//             pros::delay(100);  // Delay for 500ms (duration of the outtake)
-//             chain.move(0);
-//         }
+// void nextState2(){
+//     currState2 += 1;
+//     if(currState2 == 3){
+//         currState2 = 0;
 //     }
+//     target2 = states2[currState2];
+// }
+
+// void liftControl2(){
+//     double kp = 5;
+//     double err = target2 - (ladyOdom.get_position()/100.0);
+//     double velocity = kp * err;
+//     lb.move(velocity);
 // }
 
 void on_center_button() {}
@@ -135,10 +146,14 @@ void initialize() {
 	imu.set_heading(0);
     pros::delay(100);
 
+    ladyOdom.reset_position();
+
     yOdom.reset_position(); 
     pros::delay(100);
 
-    ladyOdom.reset_position();
+    left_mg.set_brake_mode(pros::MotorBrake::brake);
+    right_mg.set_brake_mode(pros::MotorBrake::brake);
+
 	pros::delay(100);
 
     chassis.calibrate();
@@ -154,169 +169,213 @@ void initialize() {
             pros::lcd::print(1, "Y: %f", chassis.getPose().y); // y
             pros::lcd::print(2, "Theta: %f", chassis.getPose().theta); // heading
             pros::lcd::print(3, "lb: %f", ladyOdom.get_position()/100.0); // heading
-            // pros::lcd::print(4, "color: %f", colorSensor.get_hue()/100.0); // heading
+            pros::lcd::print(4, "task:", currState); // heading
 
             pros::delay(20);
-        }
-    });
-    
-    pros::Task liftControlTask([]{
-        while(true){
+
             liftControl();
+
             pros::delay(10);
+            if(auton){
+                if(on){
+                    if(direction){
+                        if(chain.get_actual_velocity()<50 && chain.get_actual_velocity()>1){
+                            chain.move(-127);
+                            flexwheel.move(127);
+                            pros::delay(100);
+                            chain.move(127);
+                        } else{
+                            chain.move(127);
+                            flexwheel.move(127);
+                        }
+                    } else{
+                        chain.move(-127);
+                        flexwheel.move(-127);
+                    }
+                } else{
+                    chain.move(0);
+                    flexwheel.move(0);
+                }
+            }
         }
     });
+
+    // pros::Task liftControlTask2([]{
+    //     while(true){
+    //         liftControl2();
+    //         pros::delay(10);
+    //         if(on){
+    //             if(direction){
+    //                 if(chain.get_actual_velocity()<50 && chain.get_actual_velocity()>1){
+    //                     chain.move(-127);
+    //                     flexwheel.move(127);
+    //                     pros::delay(100);
+    //                     chain.move(127);
+    //                 } else{
+    //                     chain.move(127);
+    //                     flexwheel.move(127);
+    //                 }
+    //             } else{
+    //                 chain.move(-127);
+    //                 flexwheel.move(-127);
+    //             }
+    //         } else{
+    //             chain.move(0);
+    //             flexwheel.move(0);
+    //         }
+    //     }
+    // });
 
 }
 
-void disabled() {} // NOT NEEDED!!!
+ 
 
-void competition_initialize() {} // NOT NEEDED!
+void stopTask(){
+
+}
+void disabled() {}
+
+void competition_initialize() {}
+
+void in(bool onn, bool dir){
+    on = onn;
+    direction=dir;
+}
+
 
 void autonomous() {
-	imu.set_heading(0);
-	chassis.setPose(0,0,180);
+    
+    // pros::Task liftControlTask2([]{
+    //     while(true){
+    //         liftControl2();
+    //         pros::delay(10);
+    //         if(on){
+    //             if(direction){
+    //                 if(chain.get_actual_velocity()<50 && chain.get_actual_velocity()>1){
+    //                     chain.move(-127);
+    //                     flexwheel.move(127);
+    //                     pros::delay(100);
+    //                     chain.move(127);
+    //                 } else{
+    //                     chain.move(127);
+    //                     flexwheel.move(127);
+    //                 }
+    //             } else{
+    //                 chain.move(-127);
+    //                 flexwheel.move(-127);
+    //             }
+    //         } else{
+    //             chain.move(0);
+    //             flexwheel.move(0);
+    //         }
+    //     }
+    // });
+    auton = true;
 
-    //mogo
-    chassis.moveToPoint(0, 22, 1000, {.forwards=false, .maxSpeed=85});
-    chassis.moveToPoint(0, 36, 1000, {.forwards=false, .maxSpeed=50});
+    pros::delay(100);
+	imu.set_heading(0);
+	chassis.setPose(0,0,0);
+
+    currState = 1;
+    nextState();
 
     pros::delay(1000);
+
+
+    currState = 2;
+
+    nextState();    
+
+    pros::delay(300);
+
+    chassis.moveToPoint(0, -10, 500, {.forwards=false});
+    chassis.turnToHeading(360 - 60, 500);
+    chassis.waitUntilDone();
+    chassis.setPose(0,0,0);
+    chassis.waitUntilDone();
+    chassis.moveToPoint(0, -22, 500, {.forwards=false, .maxSpeed=100});
+    chassis.moveToPoint(0, -32, 300, {.forwards=false, .maxSpeed=50});
+
+    
+    pros::delay(500);
     mogo.extend();
 
+
     // ring 1
-    pros::delay(100);
+    pros::delay(200);
+
+    in(true,true);
+
+
+    // // ring 2
+    chassis.turnToHeading(360 - 84, 500);//CHANGE
+    chassis.waitUntilDone();
+    chassis.setPose(0,0,0);
+    chassis.waitUntilDone();
+    chassis.moveToPoint(0, 20, 800, {.forwards=true});//CHANGE
+    pros::delay(1000);
+
+    // // ring 3
+    chassis.turnToHeading(360 - 87, 500);
+    chassis.waitUntilDone();
+    chassis.setPose(0,0,0);
+    chassis.waitUntilDone();
+    chassis.moveToPoint(0, 12.15, 500, {.forwards=true});
+    chassis.waitUntilDone();
+    pros::delay(1000);
+    chassis.moveToPoint(0, 6, 500, {.forwards=false});
+
+    // // ring 4
+    chassis.turnToHeading(30, 500); //change 
+    chassis.waitUntilDone();
+    chassis.setPose(0,0,0);
+    chassis.waitUntilDone();
+    chassis.moveToPoint(0, 9.15, 800, {.forwards=true});
+    chassis.waitUntilDone();
+    pros::delay(1000); 
+    chassis.moveToPose(0, 0, 0, 800, {.forwards=false});
+
+    chassis.turnToHeading(360 - 118, 600);
+    chassis.waitUntilDone();
+    chassis.setPose(0,0,0);
+    chassis.waitUntilDone();
+    pros::delay(100); 
     
-    
-    chain.move(200);
-    flexwheel.move(200);
+    chassis.moveToPose(0,40, 0, 700, {.forwards=true, .maxSpeed=80});
+    chassis.moveToPose(0,70, 0, 400, {.forwards=true, .maxSpeed=30});
+
+    in(false, false);
 
 
-    //ring 2
-    chassis.turnToHeading(360 - 270, 600);//CHANGE
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
-    chassis.moveToPoint(0, 18, 1000, {.forwards=true, .maxSpeed=100});//CHANGE
-    pros::delay(100);
-    //ring 3
-    chassis.turnToHeading(360 - 85, 600);
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
-    chassis.moveToPoint(0, 12, 1000, {.forwards=true, .maxSpeed=350});
-    chassis.waitUntilDone();
-    pros::delay(200); 
-    chassis.moveToPoint(0, 6, 600, {.forwards=false, .maxSpeed=350});
 
-    //ring 4
-    chassis.turnToHeading(360 - 325, 500); //change 
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
-    chassis.moveToPoint(0, 10, 1300, {.forwards=true, .maxSpeed=350});
-    chassis.waitUntilDone();
-    chassis.moveToPose(0, -20, 0, 1000, {.forwards=false, .maxSpeed=350});
-    chassis.waitUntilDone();
-    chassis.turnToHeading(-100, 1000, {.direction=lemlib::AngularDirection::CCW_COUNTERCLOCKWISE});
+    // chassis.waitUntilDone();
+    // chassis.turnToHeading(-100, 1000, {.direction=lemlib::AngularDirection::CCW_COUNTERCLOCKWISE});
 
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
 
-    chassis.moveToPose(0, 50, 0, 1000, {.forwards=true, .maxSpeed=40});
-    chassis.waitUntilDone();
-    chain.move(0);
-    flexwheel.move(0);
-    nextState();
-    pros::delay(100);
-    nextState();
-    // test comment
-    // pros::delay(200);
-    // doinker.extend();
-    // pros::delay(200);
-    // chassis.moveToPose(0, 16, 0, 1000, {.forwards=true, .minSpeed=100});
-    // pros::delay(300);
-    // chassis.turnToHeading(-100, 1000, {.direction=lemlib::AngularDirection::CCW_COUNTERCLOCKWISE, .maxSpeed=60});
-    // pros::delay(200);
-    // doinker.retract();
+    // // touch ladder
     // chassis.waitUntilDone();
     // chassis.setPose(0,0,0);
     // chassis.waitUntilDone();
-    // chassis.moveToPose(0, -5, 0, 1000, {.forwards=true, .maxSpeed=80});
-    // chassis.turnToHeading(20, 1000);
+    // chassis.moveToPose(0, 50, 0, 1000, {.forwards=true, .maxSpeed=40});
     // chassis.waitUntilDone();
-    // chassis.setPose(0,0,0);
-    // chassis.waitUntilDone();
-    // chassis.moveToPose(0, 12, 0, 1000, {.forwards=true, .maxSpeed=80});
-
-    // pros::delay(1000);
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    // chassis.moveToPose(0, 13, 0, 1000, {.forwards=false, .minSpeed=100});
-    // chassis.moveToPose(0, 22, 0, 1000, {.forwards=true, .minSpeed=100});
-    
-    // pros::delay(100);
-    // mogo.retract();
     // chain.move(0);
-
-
-    // chassis.turnToHeading(-147,800, {.direction=lemlib::AngularDirection::CCW_COUNTERCLOCKWISE});
-    // chassis.waitUntilDone();
-    // chassis.setPose(0,0,0);
-    // chassis.waitUntilDone();
-    // chassis.moveToPoint(0, 15, 900, {.forwards=true, .maxSpeed=85});
-    // pros::delay(900);
-    // doinker.extend();
-    // pros::delay(200);
-    // chassis.moveToPoint(0, 7, 1000, {.forwards=false, .maxSpeed=70});
-    // pros::delay(200);
-    // doinker.retract();
+    // flexwheel.move(0);
+    // nextState();
     // pros::delay(100);
-    // chassis.turnToHeading(19,600);
-    // chassis.waitUntilDone();
-    // chassis.setPose(0,0,0);
-    // chassis.waitUntilDone();
-    
-    // chassis.moveToPoint(0, 20, 1000, {.forwards=true, .maxSpeed=150});
-    // chassis.waitUntilDone();
-    // pros::delay(100);
-    // doinker.extend();
-    // pros::delay(100);
-    // chassis.turnToHeading(112, 2000, {.direction=lemlib::AngularDirection::CCW_COUNTERCLOCKWISE});
-
-
-    // chassis.waitUntilDone();
-    // chassis.setPose(0,0,0);
-    // chassis.waitUntilDone();
-    // chassis.moveToPoint(0, -25, 1000, {.forwards=false, .maxSpeed=150});
-    // pros::delay(200);
-    // chain.move(400);
-    // chassis.waitUntilDone();
-    // pros::delay(200);
-    // chain.move(0);
-    // chassis.moveToPoint(0,45,1000,{.forwards=true, .maxSpeed=70});
-
-
+    // nextState();
 } 
 
 void opcontrol() {
+    // pros::Task liftControlTask([]{
+    //     while(true){
+    //         liftControl();
+    //         pros::delay(10);
+    //     }
+    // });
+
+    auton = false;
+    currState = 0;
+
 	while (true) {
 
 		int leftY = master.get_analog(ANALOG_LEFT_Y);
@@ -325,7 +384,7 @@ void opcontrol() {
 		right_mg.move(rightY);
 
         int sensor_value = distance_sensor.get_distance();
-		pros::delay(20); // Run for 20 ms then update
+		pros::delay(20);
 
         if(master.get_digital(DIGITAL_B)){
             mogo.extend();
@@ -335,10 +394,10 @@ void opcontrol() {
 
 
         if(master.get_digital(DIGITAL_RIGHT)){
-            if(sensor_value < 10.0){
+            if(sensor_value < 20.0){
                 chain.move(-400);
                 flexwheel.move(-400);
-                pros::delay(100);  // Delay for 500ms (duration of the outtake)
+                pros::delay(100);
                 chain.move(0);
                 flexwheel.move(0);
             }
@@ -359,14 +418,24 @@ void opcontrol() {
             chain.move(-400);
             flexwheel.move(-400);
         }
-        else if(master.get_digital(DIGITAL_Y)){
-            chain.move(-50);
-        } else{
+        else{
             chain.move(0);
             flexwheel.move(0);
         }
 
         if(master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_L2)){
+            nextState();
+        }
+
+        if(master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_Y)){
+            if(currState == 0){
+                nextState();
+                nextState();
+            } else if(currState == 1){
+                nextState();
+            }
+        } else{
+            currState = 2;
             nextState();
         }
 	}
