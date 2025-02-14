@@ -190,6 +190,7 @@ void initialize() {
                     flexwheel.move(0);
                 }
             }
+            pros::delay(10);
         }
     });
 }
