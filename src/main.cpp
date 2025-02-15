@@ -15,9 +15,18 @@ bool on = false;
 
 // constants for lb PID
 const int numStates = 3;
-int driverStates[numStates] = {0, 34, 180};
+int driverStates[numStates] = {5, 32, 155};
+int autonStates[numStates] = {5, 32, 200};
+
 int currState = 0;
 int target = 0;
+
+
+// you can try doing just setZERO once for brain, 
+// try manually setting odom to 32 or do the two different modes, 
+// and then use auton to change the modes, and like at the begginging of both you set different postions 
+// or if else in auton for task func
+
 
 pros::Controller master(pros::E_CONTROLLER_MASTER); 
 
@@ -28,7 +37,7 @@ pros::MotorGroup right_mg({12, 13, 14}, pros::MotorGearset::blue);
 
 pros::Motor flexwheel(20, pros::MotorGearset::green);
 pros::Motor chain(11, pros::MotorGearset::blue);
-pros::Motor lb(8, pros::MotorGearset::green);
+pros::Motor lb(-8, pros::MotorGearset::green);
 
 pros::adi::Pneumatics mogo('A', false);
 pros::adi::Pneumatics doinker('B', false); 
@@ -102,9 +111,9 @@ lemlib::Chassis chassis(
 void liftControl(){
     double kp;
     if(inAuton){
-        kp = 0.5;
+        kp = 0.75;
     } else{
-        kp = 3;
+        kp = 2;
     }
     double error = target - (ladyOdom.get_position()/100.0);
     double velocity = kp * error;
@@ -117,7 +126,11 @@ void nextState(){
     if(currState == 3){
         currState = 0;
     }
-    target = driverStates[currState];
+    if(inAuton){
+        target = autonStates[currState];
+    } else{
+        target = driverStates[currState];
+    }
 }
 
 
@@ -127,28 +140,27 @@ void initialize() {
 	pros::lcd::initialize();
 	imu.set_heading(0);
 
-    pros::delay(50);
+    pros::delay(100);
 
     ladyOdom.reset_position();
-    ladyOdom.reset();
 
-    pros::delay(50);
+    pros::delay(100);
 
     yOdom.reset_position(); 
 
-    pros::delay(50);
+    pros::delay(100);
 
     left_mg.set_brake_mode(pros::MotorBrake::brake);
     right_mg.set_brake_mode(pros::MotorBrake::brake);
 
-	pros::delay(50);
+	pros::delay(100);
 
     chassis.calibrate();
 	pros::delay(500);
 
 	pros::lcd::print(1, "✅");
 
-
+    // screen task
 	pros::Task screen_task([&]() {
         while (true) {
             pros::lcd::print(0, "X Pos: %f", chassis.getPose().x);
@@ -160,6 +172,7 @@ void initialize() {
         }
     });
 
+    // lift control task
     pros::Task liftControlTask([]{
         while (true) {
             liftControl();
@@ -167,6 +180,8 @@ void initialize() {
         }
     });
 
+
+    // anti jam
     pros::Task antiJamTask([&]() {
         while (true) {
             if(inAuton == true){
@@ -212,7 +227,6 @@ void intake(bool isOn, bool dir){
 void autonomous() {
     inAuton = true;
 
-
     pros::delay(100);
 	imu.set_heading(0);
     pros::delay(50);
@@ -220,74 +234,86 @@ void autonomous() {
     pros::delay(50);
 
     currState = 1;
+    ladyOdom.set_position(3300);
     nextState();
-
     pros::delay(1000);
-
-    nextState();    
-
-    pros::delay(300);
-
-    chassis.moveToPoint(0, -10, 500, {.forwards=false});
-    chassis.turnToHeading(360 - 60, 500);
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
-
-    chassis.moveToPoint(0, -22, 500, {.forwards=false, .maxSpeed=100});
-    chassis.moveToPoint(0, -32, 300, {.forwards=false, .maxSpeed=50});
-
-    pros::delay(500);
-    mogo.extend();
-    pros::delay(200);
-
-    intake(true,true);
-
-    // ring 2
-    chassis.turnToHeading(360 - 84, 500);//CHANGE
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
-    chassis.moveToPoint(0, 20, 800, {.forwards=true});//CHANGE
+    nextState();
     pros::delay(1000);
+    // nextState(); // assuming odom is alr at 30 or something like that !// make sure to do setZERO
 
-    // ring 3
-    chassis.turnToHeading(360 - 87, 500);
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
-    chassis.moveToPoint(0, 12.15, 500, {.forwards=true});
-    chassis.waitUntilDone();
-    pros::delay(1000);
-    chassis.moveToPoint(0, 6, 500, {.forwards=false});
+    // pros::delay(1000);
 
-    // ring 4
-    chassis.turnToHeading(30, 500); //change 
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
-    chassis.moveToPoint(0, 9.15, 800, {.forwards=true});
-    chassis.waitUntilDone();
-    pros::delay(1000); 
-    chassis.moveToPose(0, 0, 0, 800, {.forwards=false});
+    // nextState();    
 
-    chassis.turnToHeading(360 - 118, 600);
-    chassis.waitUntilDone();
-    chassis.setPose(0,0,0);
-    chassis.waitUntilDone();
-    pros::delay(100); 
+    // pros::delay(300);
+
+    // chassis.moveToPoint(0, -10, 500, {.forwards=false});
+    // chassis.turnToHeading(360 - 60, 500);
+    // chassis.waitUntilDone();
+    // chassis.setPose(0,0,0);
+    // chassis.waitUntilDone();
+
+    // chassis.moveToPoint(0, -22, 500, {.forwards=false, .maxSpeed=100});
+    // chassis.moveToPoint(0, -32, 300, {.forwards=false, .maxSpeed=50});
+
+    // pros::delay(500);
+    // mogo.extend();
+    // pros::delay(200);
+
+    // intake(true,true);
+
+    // // ring 2
+    // chassis.turnToHeading(360 - 84, 500);//CHANGE
+    // chassis.waitUntilDone();
+    // chassis.setPose(0,0,0);
+    // chassis.waitUntilDone();
+    // chassis.moveToPoint(0, 20, 800, {.forwards=true});//CHANGE
+    // pros::delay(1000);
+
+    // // ring 3
+    // chassis.turnToHeading(360 - 87, 500);
+    // chassis.waitUntilDone();
+    // chassis.setPose(0,0,0);
+    // chassis.waitUntilDone();
+    // chassis.moveToPoint(0, 12.15, 500, {.forwards=true});
+    // chassis.waitUntilDone();
+    // pros::delay(1000);
+    // chassis.moveToPoint(0, 6, 500, {.forwards=false});
+
+    // // ring 4
+    // chassis.turnToHeading(30, 500); //change 
+    // chassis.waitUntilDone();
+    // chassis.setPose(0,0,0);
+    // chassis.waitUntilDone();
+    // chassis.moveToPoint(0, 9.15, 800, {.forwards=true});
+    // chassis.waitUntilDone();
+    // pros::delay(1000); 
+    // chassis.moveToPose(0, 0, 0, 800, {.forwards=false});
+
+    // chassis.turnToHeading(360 - 118, 600);
+    // chassis.waitUntilDone();
+    // chassis.setPose(0,0,0);
+    // chassis.waitUntilDone();
+    // pros::delay(100); 
     
-    chassis.moveToPose(0,40, 0, 700, {.forwards=true, .maxSpeed=80});
-    chassis.moveToPose(0,70, 0, 400, {.forwards=true, .maxSpeed=30});
+    // chassis.moveToPose(0,40, 0, 700, {.forwards=true, .maxSpeed=80});
+    // chassis.moveToPose(0,70, 0, 400, {.forwards=true, .maxSpeed=30});
 
-    intake(false, false);
+    // intake(false, false);
 } 
+
+// 36.9
+//-15
+//1
+//180 deg turn
+// -11
 
 void opcontrol() {
     inAuton = false;
     currState = 0;
 
 	while (true) {
+        // movement
 		int leftY = master.get_analog(ANALOG_LEFT_Y);
 		int rightY = master.get_analog(ANALOG_RIGHT_Y);
 		left_mg.move(leftY);
@@ -296,12 +322,14 @@ void opcontrol() {
         int sensor_value = distance_sensor.get_distance();
 		pros::delay(20);
 
+        //mogo
         if(master.get_digital(DIGITAL_B)){
             mogo.extend();
         } else if(master.get_digital(DIGITAL_DOWN)){
             mogo.retract();
         }
 
+        //sensor
         if(master.get_digital(DIGITAL_RIGHT)){
             if(sensor_value < 20.0){
                 chain.move(-127);
@@ -312,12 +340,15 @@ void opcontrol() {
             }
         }
 
+        //doinker
         if(master.get_digital(DIGITAL_L1)){
             doinker.set_value(true);
         } else {
             doinker.set_value(false);
         }
 
+
+        // intake
         if(master.get_digital(DIGITAL_R1)){
             chain.move(127);
             flexwheel.move(127);
@@ -331,6 +362,7 @@ void opcontrol() {
             flexwheel.move(0);
         }
 
+        // lady brown
         if(master.get_digital_new_press(pros::E_CONTROLLER_DIGITAL_L2)){
             nextState();
         }
